@@ -410,7 +410,7 @@ class ConvertEK80(object):
                             comp_sig = {}
                             for isig in range(int(nb_cplx_per_samples/2)):
                                 comp_sig.update([('comp_sig_%i'%int(isig), 
-                                                  temp[ 1 + 2 * (isig) - 1, : ] + complex(0,1) * temp[2+2*(isig)-1,:])  ]  )
+                                                  temp[:, 1 + 2 * (isig) - 1 ] + complex(0,1) * temp[:, 2+2*(isig)-1])  ]  )
                             ping_tmp.update({'comp_sig':comp_sig})
                             self.cmpPwrEK80(ping = ping_tmp, config= config_transceiver_tmp_dict)
                     
