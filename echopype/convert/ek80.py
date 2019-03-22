@@ -1,12 +1,5 @@
-# -*- coding: utf-8 -*-
 """
-Created on Sat Mar  9 10:22:56 2019
-
-@author: Sven Gastauer
-@licence: GPLv3 or higher
-@credits: Wu-Jung Lee, Yoann Ladroit, Dezhang Chu, Martin J. Cox
-@maintainer: Sven Gastauer
-@status: development
+Functions to unpack Simrad EK80 .raw and save to .nc.
 
 TO DO:
     PULSE COMPRESSION
