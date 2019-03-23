@@ -1,10 +1,10 @@
-"""
-Functions to unpack Simrad EK80 .raw and save to .nc.
+"""Read and Convert Simrad EK80 raw files
 
-TO DO:
-    PULSE COMPRESSION
-    ANGULAR POSITION
-    WRITE TO NC
+TO DO :
+    Pulse compression
+    Angular Position
+    Impedance readings
+    NC converison
 """
 import re
 from collections import defaultdict
@@ -13,7 +13,7 @@ import pandas as pd
 from lxml import etree
 from itertools import groupby
 from datetime import datetime, timedelta
-from struct import unpack_from, unpack
+from struct import unpack
 
 class convertEK80(object):
     def __init__(self, _fn=""):
@@ -35,15 +35,20 @@ class convertEK80(object):
         self.count_filt = -1
         self.count_mru = -1
         
-        self.fn = fn
+        self.fn = _fn
 
     def cmpPwrEK80(self, ping, config, ztrd = 75):
-        """
-        Compute power from complex signal
+        """Compute power from complex signal
+        
         This function assumes that a config was read previously and information such as impedance and number of transducers is available
-        :params ping: ping dictionary that will be updated
-        :params ztrd: Integer - Nominal Impedance, set to 75 Ohms by default
-        :units ztrd: Ohm
+        
+        Parameters
+        ----------
+        ping: dict
+            ping dictionary that will be updated
+        ztrd: int
+            Nominal Impedance, set to 75 Ohms by default
+
         """
         cid = ping['cid']
         impedance = int(config[cid]['Impedance'])
@@ -58,12 +63,15 @@ class convertEK80(object):
 
     def xml2d(self, e):
         
-        """
-        Convert an etree into a dict structure
+        """Convert an etree into a dict structure
+        
+        This function retruns the dictionary representation of the XML tree
 
-        :type  e: etree.Element
-        :param e: the root of the tree
-        :returns: The dictionary representation of the XML tree
+        Parameters
+        ----------
+        e: etree.Element
+            the root of the tree
+        
         """
         
         def _xml2d(e):
@@ -79,22 +87,33 @@ class convertEK80(object):
         return { e.tag : _xml2d(e) }
 
     def parse_XML(self, xml_string):
+        """parse xml into dict
+
+        This function parses an XML string and returns a dictionary
+
+        Parameters
+        ----------
+        xml_string: str
+            an xml string
         """
-        parse xml into dict
-        :param xml_string: an xml string
-        """
+
         parser = etree.XMLParser(recover=True)
         xml_info = etree.fromstring(xml_string, parser=parser)
         
         return self.xml2d(xml_info)
 
     def _index_ek80(self):
-        '''
-        create index of datagrams
-        Currently this is not used, as the file is read in blocks
-        :param file_input: open file
-        :returns: Dataframe with datagram - datagram type and start - starting byte
-        '''
+        """create index of datagrams
+        Creates an index of the location and length of the datagrams in the raw file
+        The function returns a pandas dataframe with datagram type ('datagram'), start position ('start') and length of the datagram as columns
+
+        Parameters
+        ----------
+        fn: str
+            Filename and location as string
+        
+        """
+
         ind2 = []
         with open(self.fn ,'rb') as bin_file:
             #bin_file.seek(7)
@@ -120,7 +139,13 @@ class convertEK80(object):
         return(idx)
             
     def readEK80(self):
-        
+    """create index of datagrams
+
+    Reads the EK80 raw file based on a file index and puts the information into the object
+
+    """
+    
+        #get file index
         idx = self._index_ek80()
 
         with open(self.fn , 'rb') as file:
@@ -143,18 +168,18 @@ class convertEK80(object):
                         self.config_header = xml_dat['Header'][0]
                         self.config_transceiver = xml_dat['Transceivers'][0]['Transceiver']
                         self.config_transducer = xml_dat['Transducers'][0]['Transducer']
-                        n_trans = len(self.config_transceiver)
-                        CID =[]
-                        for c in range(n_trans):
-                            CID.append(xml_dat['Transceivers'][0]['Transceiver'][c]['Channels'][0]['Channel'][0]['ChannelID'])
+                        self.n_trans = len(self.config_transceiver)
+                        self.CID =[]
+                        for c in range(self.n_trans):
+                            self.CID.append(xml_dat['Transceivers'][0]['Transceiver'][c]['Channels'][0]['Channel'][0]['ChannelID'])
                             self.pings[c] = defaultdict(list)
-                        ping_count = [-1] * len(CID)
+                        ping_count = [-1] * len(self.CID)
                     #########
-                    # self.environment
+                    # environment
                     #########
-                    if xmltype == 'self.environment':
+                    if xmltype == 'Environment':
                         self.count_env += 1
-                        self.environment[self.count_env] = xml0_dict['self.environment']
+                        self.environment[self.count_env] = xml0_dict['Environment']
                     #########
                     # Ping self.parameters
                     #########
@@ -165,13 +190,13 @@ class convertEK80(object):
                 ###########
                 # self.mru - Motion
                 ###########
-                elif idx['datagram'][i] == b'self.mru0':
+                elif idx['datagram'][i] == b'MRU0':
                     self.count_mru += 1
                     file.seek(idx['start'][i]+self.DATAGRAM_HEADER_SIZE)
-                    self.mru_dtype = np.dtype([('heave','f4'),('roll','f4'),('pitch','f4'),('heading','f4')])
+                    mru_dtype = np.dtype([('heave','f4'),('roll','f4'),('pitch','f4'),('heading','f4')])
                     var = ['heave','roll','pitch','heading']
-                    self.mru_tmp = np.fromfile(file, dtype=self.mru_dtype, count=1)
-                    self.mru[self.count_mru] = dict(zip(var,self.mru[0]))
+                    mru = np.fromfile(file, dtype=mru_dtype, count=1)
+                    self.mru[self.count_mru] = dict(zip(var,mru[0]))
                 ###########
                 # FIL1 - Filter data
                 ###########
@@ -216,7 +241,7 @@ class convertEK80(object):
                     head.update({'dgTime' : datetime(1601, 1, 1, 0, 0, 0) + timedelta(seconds = ntSecs)})
                 
                     #get channel ID
-                    head.update({'cid' : CID.index(head['chID'].decode('ascii'))})
+                    head.update({'cid' : self.CID.index(head['chID'].decode('ascii'))})
                     
                     #get current ping number
                     ping_count[head['cid']] += 1
@@ -277,10 +302,10 @@ class convertEK80(object):
                     self.pings[head['cid']][ping_n] = head  
         #get power, y and complex np arrays in shape 
 
-        self.power_data  = [defaultdict] *  n_trans
-        self.y_data  = [defaultdict] *  n_trans
-        self.comp_sig_data  = [defaultdict] *  n_trans
-        for c in range(n_trans):
+        self.power_data  = [defaultdict] *  self.n_trans
+        self.y_data  = [defaultdict] *  self.n_trans
+        self.comp_sig_data  = [defaultdict] *  self.n_trans
+        for c in range(self.n_trans):
             if 'power' in self.pings[c][0]:
                 self.power_data[c] = np.array([self.pings[c][x]['power'] for x in self.pings[c]]).squeeze()
             if 'y' in self.pings[c][0]:                    
