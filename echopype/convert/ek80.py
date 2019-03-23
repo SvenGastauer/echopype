@@ -188,7 +188,39 @@ class convertEK80(object):
         
         return(sim_pulse_2, y_tx_matched)
 
-
+    def matched_filter(self,chID):
+        """Create matched Filter
+        
+        Parameters
+        ----------
+        chID: int
+            Channel ID (selected tranceiver)
+        
+        """
+        if 'FrequencyStart' in self.params.iloc[chID]:
+            if self.params.iloc[chID]['FrequencyStart'] is not self.params.iloc[chID]['FrequencyEnd']:
+                mode = 'FM'
+                comp_sig  = self.comp_sig_data[chID]
+                
+                nb_pings, nb_samples, nb_chan = np.shape(comp_sig)
+                _, y_tx_matched = self.pulse_generator(chID,0)
+                data = [[]] * nb_chan
+                for ch in range(nb_chan):
+                    cp = comp_sig[:,:,ch]
+                    
+                    val_sq=sum( abs(y_tx_matched) **2)
+                    n = len(y_tx_matched) + nb_samples 
+                    yc = np.fft.ifft(np.fft.fft(y_tx_matched,n) * np.fft.fft(cp,n,ch)/val_sq)
+                    data[ch] = yc[:,len(y_tx_matched):]
+                return data,mode
+                    
+            else:
+                mode = 'CW'
+                return mode
+        else:
+            mode = 'CW'
+            return mode
+        
     def _index_ek80(self):
         """create index of datagrams
         Creates an index of the location and length of the datagrams in the raw file
@@ -391,6 +423,7 @@ class convertEK80(object):
         self.power_data  = [defaultdict] *  self.n_trans
         self.y_data  = [defaultdict] *  self.n_trans
         self.comp_sig_data  = [defaultdict] *  self.n_trans
+        
         for c in range(self.n_trans):
             if 'power' in self.pings[c][0]:
                 self.power_data[c] = np.array([self.pings[c][x]['power'] for x in self.pings[c]]).squeeze()
@@ -398,3 +431,6 @@ class convertEK80(object):
                 self.y_data[c] = np.array([self.pings[c][x]['y'] for x in self.pings[c]]).squeeze()
             if 'comp_sig' in self.pings[c][0]:
                 self.comp_sig_data[c] = np.array([np.transpose(np.asarray([(v) for v in self.pings[c][x]['comp_sig'].values()])) for x in self.pings[c]]).squeeze()
+
+        params = pd.DataFrame(self.parameters).transpose()
+        self.params = params.drop_duplicates()
