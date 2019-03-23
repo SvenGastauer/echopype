@@ -5,6 +5,7 @@ Read and Convert Simrad EK80 raw files
 TO DO :
     Pulse compression
     Angular Position
+    Impedance readings
     NC converison
 """
 import re
@@ -39,12 +40,17 @@ class convertEK80(object):
         self.fn = _fn
 
     def cmpPwrEK80(self, ping, config, ztrd = 75):
-        """
-        Compute power from complex signal
+        """Compute power from complex signal
+        
         This function assumes that a config was read previously and information such as impedance and number of transducers is available
-        :params ping: ping dictionary that will be updated
-        :params ztrd: Integer - Nominal Impedance, set to 75 Ohms by default
-        :units ztrd: Ohm
+        
+        Parameters
+        ----------
+        ping: dict
+            ping dictionary that will be updated
+        ztrd: int
+            Nominal Impedance, set to 75 Ohms by default
+
         """
         cid = ping['cid']
         impedance = int(config[cid]['Impedance'])
@@ -59,12 +65,15 @@ class convertEK80(object):
 
     def xml2d(self, e):
         
-        """
-        Convert an etree into a dict structure
+        """Convert an etree into a dict structure
+        
+        This function retruns the dictionary representation of the XML tree
 
-        :type  e: etree.Element
-        :param e: the root of the tree
-        :returns: The dictionary representation of the XML tree
+        Parameters
+        ----------
+        e: etree.Element
+            the root of the tree
+        
         """
         
         def _xml2d(e):
@@ -80,22 +89,33 @@ class convertEK80(object):
         return { e.tag : _xml2d(e) }
 
     def parse_XML(self, xml_string):
+        """parse xml into dict
+
+        This function parses an XML string and returns a dictionary
+
+        Parameters
+        ----------
+        xml_string: str
+            an xml string
         """
-        parse xml into dict
-        :param xml_string: an xml string
-        """
+
         parser = etree.XMLParser(recover=True)
         xml_info = etree.fromstring(xml_string, parser=parser)
         
         return self.xml2d(xml_info)
 
     def _index_ek80(self):
-        '''
-        create index of datagrams
-        Currently this is not used, as the file is read in blocks
-        :param file_input: open file
-        :returns: Dataframe with datagram - datagram type and start - starting byte
-        '''
+        """create index of datagrams
+        Creates an index of the location and length of the datagrams in the raw file
+        The function returns a pandas dataframe with datagram type ('datagram'), start position ('start') and length of the datagram as columns
+
+        Parameters
+        ----------
+        fn: str
+            Filename and location as string
+        
+        """
+
         ind2 = []
         with open(self.fn ,'rb') as bin_file:
             #bin_file.seek(7)
@@ -121,7 +141,13 @@ class convertEK80(object):
         return(idx)
             
     def readEK80(self):
-        
+    """create index of datagrams
+
+    Reads the EK80 raw file based on a file index and puts the information into the object
+
+    """
+    
+        #get file index
         idx = self._index_ek80()
 
         with open(self.fn , 'rb') as file:
