@@ -9,12 +9,19 @@ TO DO :
 """
 import re
 from collections import defaultdict
+
 import numpy as np
 import pandas as pd
+
 from lxml import etree
 from itertools import groupby
+
 from datetime import datetime, timedelta
+
 from struct import unpack
+
+from scipy.signal import chirp
+from scipy.signal import resample
 
 class convertEK80(object):
     def __init__(self, _fn=""):
@@ -101,6 +108,86 @@ class convertEK80(object):
         xml_info = etree.fromstring(xml_string, parser=parser)
         
         return self.xml2d(xml_info)
+    
+    def pulse_generator(self, chID, ping):
+        """Generate a simrad EK80 pulse
+        
+        Simulates a pulse, needed for matched filtering
+        
+        Parameters
+        ----------
+        
+        chID: int
+            The channel ID for which the pulse should be simulated
+        ping: int
+            The ping number for which the pulse should be simulated
+            
+        """
+        f_s_ori=1.5*1e6;
+        
+        F1 = self.filters[chID+1*2-2]
+        F2 = self.filters[chID+1*2-2+1]
+        D_1 = F1['DecFac']
+        D_2 = F2['DecFac']
+        
+        filt_1 = F1['Coeff'][0][0::2]+ 1j * F1['Coeff'][0][1::2]
+        filt_2 = F2['Coeff'][0][0::2] + 1j * F2['Coeff'][0][1::2]
+        
+        
+        para  = pd.DataFrame(self.parameters).transpose()
+        para = para[para['ChannelID']== self.CID[chID]].iloc[ping]
+        
+        f_s_sig = 1 / float(para['SampleInterval'])
+        FreqStart = int(para['FrequencyStart'])
+        FreqEnd = int(para['FrequencyEnd'])
+        
+        pulse_length = float(para['PulseDuration'])
+        pulse_slope = float(para['Slope'])
+        
+        t_sim_pulse = np.transpose(np.linspace(0,pulse_length,int(pulse_length * f_s_ori)))
+        
+        n_p = len(t_sim_pulse)
+        
+        nwtx = 2 * np.floor( pulse_slope * n_p)
+        
+        wtxtmp  = np.hanning(nwtx)
+        
+        nwtxh   = int(np.ceil(nwtx/2))
+        
+        
+        env_pulse = np.concatenate([wtxtmp[0:nwtxh], np.ones(int(n_p - nwtx)), wtxtmp[nwtxh:]])
+        
+        sim_pulse = env_pulse * chirp(t = t_sim_pulse,
+                                      f0 = FreqStart,
+                                      f1=FreqEnd,
+                                      t1=t_sim_pulse[-1])
+        
+        #Filter simulated pulse to create match filter%
+        f_s_dec = []
+        f_s_dec.append(f_s_ori / D_1)
+        f_s_dec.append(f_s_dec[0] / D_2)
+        
+        if abs(f_s_dec[1] - f_s_sig) >= 1:
+            print('Decimated pulse sample rate not matching signal sampling rate')
+        #make convolution function with padding
+        def conv(u,v):
+            npad = len(v) - 1
+            u_padded = np.pad(u, (npad // 2, npad - npad // 2), mode='constant')
+            return(np.convolve(u_padded, v, 'valid'))
+        
+        sim_pulse_1 = conv(sim_pulse / max(abs(sim_pulse)), filt_1) 
+        sim_pulse_1 = resample(sim_pulse_1,int(np.floor(len(sim_pulse)/D_1)))
+        
+        
+        sim_pulse_2 = conv(sim_pulse_1 / max(abs(sim_pulse_1)),filt_2)
+        sim_pulse_2 = resample(sim_pulse_2,int(np.floor(len(sim_pulse)/D_2)))
+        
+        sim_pulse_2 = sim_pulse_2 / max(sim_pulse_2)
+        
+        y_tx_matched = np.conj(np.flipud(sim_pulse_2))
+        
+        return(sim_pulse_2, y_tx_matched)
+
 
     def _index_ek80(self):
         """create index of datagrams
@@ -204,7 +291,7 @@ class convertEK80(object):
                     file.seek(idx['start'][i]+self.DATAGRAM_HEADER_SIZE)
                     FIL1_dtype = np.dtype([('Stage','i2'),('Spare','i2'), ('Channel','S128'),('NCoeff','i2'),('DecFac','i2')])
                     f1 = np.fromfile(file, dtype = FIL1_dtype, count=1)
-                    coeffs = np.fromfile(file,dtype = str(2 * f1['NCoeff'][0]) + 'f4')
+                    coeffs = np.fromfile(file,dtype = str(2 * f1['NCoeff'][0]) + 'f4', count=1)
                     self.filters[self.count_filt] = dict({'ChID':f1['Channel'][0].decode('ascii'),'Stage':f1['Stage'][0],'Spare':f1['Spare'][0],'NCoeff':f1['NCoeff'][0],'DecFac':f1['DecFac'][0], 'Coeff': coeffs})
                 ################################################
                 ##### NME0 Reader
