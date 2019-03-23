@@ -138,11 +138,11 @@ class convertEK80(object):
         return(idx)
             
     def readEK80(self):
-    """create index of datagrams
-
-    Reads the EK80 raw file based on a file index and puts the information into the object
-
-    """
+        """create index of datagrams
+    
+        Reads the EK80 raw file based on a file index and puts the information into the object
+    
+        """
     
         #get file index
         idx = self._index_ek80()
